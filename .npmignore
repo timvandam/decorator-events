@@ -6,3 +6,5 @@ tsconfig.json
 tsconfig.tsbuildinfo
 /.idea
 /coverage
+/.github
+jest.config.ts

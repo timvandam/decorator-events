@@ -1,4 +1,3 @@
-import { defaultOptions } from '../EventHandler';
 import {
   Event,
   EventHandler,
@@ -6,6 +5,7 @@ import {
   container,
   EventHandlerData,
   EventHandlerDataContainer,
+  defaultOptions,
 } from '../index';
 import { ClassType } from '../types';
 

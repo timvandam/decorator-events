@@ -7,8 +7,8 @@ import {
   spyOnAllEventHandlers,
   EventHandlerOptions,
   EventHandlerData,
+  defaultOptions,
 } from '../index';
-import { defaultOptions } from '../EventHandler';
 
 class TestEvent extends Event {}
 

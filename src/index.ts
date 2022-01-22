@@ -2,7 +2,12 @@ import 'reflect-metadata';
 
 export { Event } from './Event';
 export { EventBus } from './EventBus';
-export { EventHandler, EventHandlerOptions, EventHandlerFunction } from './EventHandler';
+export {
+  EventHandler,
+  EventHandlerOptions,
+  EventHandlerFunction,
+  defaultOptions,
+} from './EventHandler';
 export { EventPriority } from './EventPriority';
 export {
   EventHandlerDataContainer,
