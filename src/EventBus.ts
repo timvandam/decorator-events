@@ -1,56 +1,56 @@
 import { Event } from './Event';
 import { container, EventHandlerData } from './EventHandlerDataContainer';
-import mustache from 'mustache';
+import * as mustache from 'mustache';
 import { EventPriority } from './EventPriority';
-import { Environment } from './Environment';
+import { Context, ContextVariable } from './Context';
 import { UncaughtErrorEvent } from './UncaughtErrorEvent';
-import { ClassConstructor } from './util';
+import { ClassType } from './types';
+import * as map from './map-utils';
 
 type JitEventHandler = <T extends Event>(event: T) => Promise<boolean>;
 
-export class EventBus {
-  protected listenersByClass: Map<ClassConstructor<any>, object[]> = new Map();
-  protected jit: JitEventHandler = () => Promise.resolve(false);
+export class EventBus<L extends object = object> {
+  protected listenersByClass: Map<ClassType<L>, L[]> = new Map();
+  protected eventHandler: JitEventHandler = () => Promise.resolve(false);
 
-  protected registerListener(listener: object) {
-    const clazz = listener.constructor as ClassConstructor<any>;
-    if (this.listenersByClass.has(clazz)) {
-      this.listenersByClass.get(clazz)!.push(listener);
-    } else {
-      this.listenersByClass.set(clazz, [listener]);
-    }
+  protected registerListener(listener: L): void {
+    const clazz = listener.constructor as ClassType<L>;
+    map.getOrSetDefault(this.listenersByClass, clazz, []).push(listener);
   }
 
-  register(...listeners: object[]): void {
+  register(...listeners: L[]): void {
     listeners.forEach((listener) => this.registerListener(listener));
-    this.buildJit();
+    this.buildEventHandler();
   }
 
-  emit(event: Event) {
-    return this.jit(event);
+  emit<T extends Event>(event: T): Promise<boolean> {
+    return this.eventHandler(event);
   }
 
-  protected getEventClasses() {
-    return container
-      .getEventClasses()
-      .filter((eventClass) => this.getEventHandlerDataForEventClass(eventClass).length);
-  }
+  protected getEventHandlerDataMap(): Map<
+    ClassType<Event>,
+    (EventHandlerData & { listeners: L[] })[]
+  > {
+    const result = new Map<ClassType<Event>, (EventHandlerData & { listeners: L[] })[]>();
 
-  protected getEventHandlerDataForEventClass<T extends Event>(
-    eventClass: ClassConstructor<T>,
-  ): EventHandlerData[] {
-    const eventHandlerData = container.get(eventClass);
-    if (eventHandlerData === undefined) {
-      return [];
-    } else {
-      return eventHandlerData.filter((eventHandlerData) =>
-        this.listenersByClass.has(eventHandlerData.listenerClass),
-      );
+    for (const [listenerClass, listeners] of this.listenersByClass) {
+      for (const eventHandlerData of container.getEventHandlerDataForListenerClass(listenerClass)) {
+        map
+          .getOrSetDefault(result, eventHandlerData.eventClass, [])
+          .push({ ...eventHandlerData, listeners });
+      }
     }
+
+    return result;
   }
 
-  protected buildJit() {
-    const env = new Environment();
+  /**
+   * Dynamically builds a function that will handle all emitted events.
+   * Built functions are much faster than looping through all registered listeners for each emit.
+   * Though, this is not ideal if event listeners are often registered.
+   */
+  protected buildEventHandler(): void {
+    const context = new Context();
     const template = `
       return async function (event) {
         let handled = false; // whether this event has been handled by a handler
@@ -73,7 +73,7 @@ export class EventBus {
               ) {
                   try {
                       handled = true;
-                      await {{{listener}}}.{{{functionName}}}(event);
+                      await {{{listenerClass}}}.prototype[{{{functionName}}}].call({{{listener}}}, event);
                   } catch (error) {
                       const errorHandled = await eventBus.emit(new UncaughtErrorEvent(error));
                       if (errorHandled === false) {
@@ -90,44 +90,46 @@ export class EventBus {
     `;
 
     // Globals
-    env.value(this, 'eventBus');
-    env.value(UncaughtErrorEvent, 'UncaughtErrorEvent');
+    context.value(this, 'eventBus');
+    context.value(UncaughtErrorEvent, 'UncaughtErrorEvent');
 
-    type EnvironmentVariable<T> = string;
     type TemplateInput = {
       eventClasses: {
-        eventClass: EnvironmentVariable<Event>;
+        eventClass: ContextVariable<ClassType<Event>>;
         eventClassName: string;
         handlers: {
-          functionName: string;
+          functionName: ContextVariable<string | symbol>;
           inheritance: boolean;
           ignoreCancelled: boolean;
-          listener: EnvironmentVariable<object>;
+          listener: ContextVariable<L>;
+          listenerClass: ContextVariable<ClassType<L>>;
           listenerName: string;
-          priority: string;
+          priorityName: string;
         }[];
       }[];
     };
 
+    const eventHandlerDataMap = this.getEventHandlerDataMap();
     const templateInput: TemplateInput = {
-      eventClasses: this.getEventClasses().map((eventClass) => ({
-        eventClass: env.value(eventClass),
+      eventClasses: [...eventHandlerDataMap.entries()].map(([eventClass, eventHandlerDatas]) => ({
+        eventClass: context.value(eventClass),
         eventClassName: eventClass.name,
-        handlers: this.getEventHandlerDataForEventClass(eventClass).flatMap(
-          ({ inheritance, listenerClass, functionName, ignoreCancelled, priority }) =>
-            this.listenersByClass.get(listenerClass)!.map((listener) => ({
-              listener: env.value(listener),
+        handlers: eventHandlerDatas.flatMap(
+          ({ inheritance, listenerClass, functionName, ignoreCancelled, priority, listeners }) =>
+            listeners.map((listener) => ({
+              listener: context.value(listener),
+              listenerClass: context.value(listenerClass as ClassType<L>),
               listenerName: listenerClass.name,
-              priority: EventPriority[priority],
+              priorityName: EventPriority[priority],
               inheritance,
               ignoreCancelled,
-              functionName,
+              functionName: context.value(functionName),
             })),
         ),
       })),
     };
 
     const rendered = mustache.render(template, templateInput);
-    this.jit = env.buildFunction(rendered);
+    this.eventHandler = context.evaluate(rendered) as JitEventHandler;
   }
 }

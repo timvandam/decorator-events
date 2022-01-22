@@ -1,4 +1,7 @@
-# event-decorators
+# decorator-events
+[![codecov](https://codecov.io/gh/timvandam/decorator-events/branch/main/graph/badge.svg?token=LOJAXCO8DD)](https://codecov.io/gh/timvandam/decorator-events)
+[![code style: prettier](https://img.shields.io/badge/code_style-prettier-ff69b4.svg?style=flat-square)](https://github.com/prettier/prettier)
+
 Extremely fast decorator-based event library.
 
 This library builds a function that handles all events each time `EventBus::register` is called.
@@ -22,7 +25,8 @@ class Listener {
   @EventHandler
   async eventHandler(event: SignInEvent) {
     console.log(`User ${event.user.name} signed in!`);
-    await logSignIn(SignInEvent.user); // handle the event
+    // handle the event
+    // ...
   }
 }
 

@@ -1,14 +1,17 @@
-import { arrayInsert } from './util';
 import { Event } from './Event';
 import { EventPriority } from './EventPriority';
-import { ClassConstructor } from './util';
+import * as map from './map-utils';
+import * as array from './array-utils';
+import { ClassType } from './types';
 
 export type EventHandlerData = {
   priority: EventPriority;
   ignoreCancelled: boolean;
   inheritance: boolean;
-  functionName: string;
-  listenerClass: ClassConstructor<any>;
+  functionName: string | symbol;
+  listenerClass: ClassType;
+  override: boolean;
+  eventClass: ClassType<Event>;
 };
 
 /**
@@ -16,37 +19,76 @@ export type EventHandlerData = {
  */
 export class EventHandlerDataContainer {
   // Stores data for event handlers (ordered by priority) by the event being listened to
-  private container = new Map<ClassConstructor<Event>, EventHandlerData[]>();
-
-  getEventClasses() {
-    return [...this.container.keys()];
-  }
+  private eventHandlerDataByEventClass = new Map<ClassType<Event>, EventHandlerData[]>();
+  private eventHandlerDataByListenerClass = new Map<ClassType, EventHandlerData[]>();
 
   /**
-   * Gets the list of handlers for some event
+   * Returns event classes in this container (only the actual event classes, not their super classes)
    */
-  get<T extends Event>(eventClass: ClassConstructor<T>): EventHandlerData[] | undefined {
-    return this.container.get(eventClass);
+  getEventClasses(): ClassType<Event>[] {
+    return [...this.eventHandlerDataByEventClass.keys()];
+  }
+
+  getOwnEventHandlerDataByEventClass<E extends Event>(
+    eventClass: ClassType<E>,
+  ): EventHandlerData[] {
+    return map.getOrDefault(this.eventHandlerDataByEventClass, eventClass, []);
+  }
+
+  getOwnEventHandlerDataByListenerClass(listenerClass: ClassType): EventHandlerData[] {
+    return map.getOrDefault(this.eventHandlerDataByListenerClass, listenerClass, []);
+  }
+
+  getEventHandlerDataForListenerClass(listenerClass: ClassType): EventHandlerData[] {
+    const result: EventHandlerData[] = [];
+    const handlerNames = new Set<string | symbol>();
+
+    while (listenerClass !== Object) {
+      const handlers = this.getOwnEventHandlerDataByListenerClass(listenerClass);
+      for (const handler of handlers) {
+        if (handlerNames.has(handler.functionName)) {
+          continue;
+        }
+
+        array.merge(result, [handler], (eventHandlerData) => eventHandlerData.priority);
+
+        if (handler.override) {
+          handlerNames.add(handler.functionName);
+        }
+      }
+
+      const superClass =
+        listenerClass.prototype &&
+        (Reflect.getPrototypeOf(listenerClass.prototype)?.constructor as ClassType | undefined);
+
+      if (superClass === undefined) break;
+
+      listenerClass = superClass;
+    }
+
+    return result;
   }
 
   /**
    * Adds eventHandler data to the container, keeping in mind priority
    */
-  add<T extends Event>(eventClass: ClassConstructor<T>, eventHandlerData: EventHandlerData): void {
-    let handlers = this.get(eventClass);
-    if (handlers === undefined) this.container.set(eventClass, (handlers = []));
+  add(eventHandlerData: EventHandlerData): void {
+    const handlers = map.getOrSetDefault(
+      this.eventHandlerDataByEventClass,
+      eventHandlerData.eventClass,
+      [],
+    );
 
-    // Insert eventHandlerData based on priority
-    let inserted = false;
-    for (let i = 0; i < handlers.length; i++) {
-      if (eventHandlerData.priority < handlers[i].priority) {
-        arrayInsert(handlers, eventHandlerData, i);
-        inserted = true;
-        break;
-      }
-    }
-    if (!inserted) handlers.push(eventHandlerData);
+    array.merge(handlers, [eventHandlerData], (eventHandlerData) => eventHandlerData.priority);
+    map
+      .getOrSetDefault(this.eventHandlerDataByListenerClass, eventHandlerData.listenerClass, [])
+      .push(eventHandlerData);
+  }
+
+  clear(): void {
+    this.eventHandlerDataByEventClass = new Map();
+    this.eventHandlerDataByListenerClass = new Map();
   }
 }
 
-export const container: EventHandlerDataContainer = new EventHandlerDataContainer();
+export const container = new EventHandlerDataContainer();

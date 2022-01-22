@@ -1,4 +1,7 @@
-export class Event {
+/**
+ * Basic cancelable event
+ */
+export abstract class Event {
   protected cancelled = false;
 
   public isCancelled(): boolean {

@@ -4,7 +4,7 @@ class TestEvent extends Event {
   prop = 1;
 }
 
-it('waits for asynchronous event handlers before resolving emit', async () => {
+it.concurrent('waits for asynchronous event handlers before resolving emit', async () => {
   class TestListener {
     @EventHandler
     async handler(event: TestEvent) {

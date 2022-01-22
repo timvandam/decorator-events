@@ -1,18 +1,20 @@
 import { Event } from './Event';
 import { EventPriority } from './EventPriority';
 import { container, EventHandlerData } from './EventHandlerDataContainer';
-import { ClassConstructor } from './util'
+import { ClassType } from './types';
 
 export type EventHandlerOptions = {
   priority: EventPriority;
   ignoreCancelled: boolean;
   inheritance: boolean;
+  override: boolean;
 };
 
-const defaultOptions: EventHandlerOptions = {
+export const defaultOptions: EventHandlerOptions = {
   priority: EventPriority.NORMAL,
   ignoreCancelled: true,
   inheritance: false,
+  override: true,
 };
 
 export type EventHandlerFunction<E extends Event = Event> = (event: E) => any;
@@ -33,7 +35,7 @@ export function EventHandler(
   options?: Partial<EventHandlerOptions>,
 ): <E extends Event>(
   target: object,
-  propertyKey: string,
+  propertyKey: string | symbol,
   descriptor: TypedPropertyDescriptor<EventHandlerFunction<E>>,
 ) => void;
 
@@ -42,7 +44,7 @@ export function EventHandler(
     | [options?: Partial<EventHandlerOptions>]
     | [
         target: object,
-        propertyKey: string,
+        propertyKey: string | symbol,
         descriptor: TypedPropertyDescriptor<EventHandlerFunction>,
       ]
 ): void | typeof decorator {
@@ -57,27 +59,39 @@ export function EventHandler(
 
   function decorator<E extends Event>(
     target: object,
-    propertyKey: string,
-    descriptor: TypedPropertyDescriptor<EventHandlerFunction<E>>,
-  ) {
+    propertyKey: string | symbol,
+    descriptor: TypedPropertyDescriptor<EventHandlerFunction<E>>, // do not remove! the <E> ensures correct type checking
+  ): void {
+    const eventClass = getEventHandlerEventClass(target, propertyKey);
+
     const eventHandlerData: EventHandlerData = {
-      listenerClass: target.constructor as ClassConstructor<any>,
+      listenerClass: target.constructor as ClassType,
       functionName: propertyKey,
-      priority: options.priority ?? defaultOptions.priority,
-      ignoreCancelled: options.ignoreCancelled ?? defaultOptions.ignoreCancelled,
-      inheritance: options.inheritance ?? defaultOptions.inheritance,
+      priority: options.priority,
+      ignoreCancelled: options.ignoreCancelled,
+      inheritance: options.inheritance,
+      override: options.override,
+      eventClass,
     };
 
-    container.add(getEventHandlerEventClass(target, propertyKey), eventHandlerData);
+    container.add(eventHandlerData);
   }
 }
 
-function getEventHandlerEventClass(target: object, propertyKey: string): ClassConstructor<Event> {
+/**
+ * Get event class for some event handler
+ */
+function getEventHandlerEventClass<T extends Event>(
+  target: object,
+  propertyKey: string | symbol,
+): ClassType<T> {
   const [eventType] = Reflect.getMetadata('design:paramtypes', target, propertyKey);
 
   if (!eventType || !(eventType.prototype instanceof Event)) {
     throw new Error(
-      `The first parameter of method '${propertyKey}' on ${target.constructor.name} is not an Event type.`,
+      `The first parameter of method '${propertyKey.toString()}' on ${
+        target.constructor.name
+      } is not an Event type.`,
     );
   }
 

@@ -5,18 +5,15 @@
 		"removeComments": true,
 		"emitDecoratorMetadata": true,
 		"experimentalDecorators": true,
-		"allowSyntheticDefaultImports": true,
-		"target": "es2020",
+		"target": "es2019",
 		"sourceMap": true,
 		"outDir": "./dist",
 		"rootDir": "./src",
-		"incremental": true,
 		"noImplicitAny": true,
-		"esModuleInterop": true,
 		"strict": true,
 		"resolveJsonModule": true,
 		"skipLibCheck": true,
 	},
 	"include": ["src"],
-	"exclude": ["**/test/*", "**/*.test.ts", "**/*.spec.ts"]
+	"exclude": ["**/test/*", "**/*.test.ts"]
 }
